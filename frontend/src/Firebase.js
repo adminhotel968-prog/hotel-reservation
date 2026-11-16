@@ -5,13 +5,13 @@ import { getAnalytics } from "firebase/analytics";
 
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCzydINVn-Gio9P13K4vsYEBAljbiiRLeg",
-  authDomain: "hotel-reservation-d7595.firebaseapp.com",
-  projectId: "hotel-reservation-d7595",
-  storageBucket: "hotel-reservation-d7595.firebasestorage.app",
-  messagingSenderId: "334749495050",
-  appId: "1:334749495050:web:55d0df445b5ef6e38914f3",
-  measurementId: "G-8W0WVFZJPG"
+apiKey: "AIzaSyAvLYLd3Q6FeAHhE-Xw6WO1hPOdfXgREYA",
+  authDomain: "hotel-reservation-f1a6e.firebaseapp.com",
+  projectId: "hotel-reservation-f1a6e",
+  storageBucket: "hotel-reservation-f1a6e.firebasestorage.app",
+  messagingSenderId: "551265800789",
+  appId: "1:551265800789:web:29b3e52fc5f80748b43adc",
+  measurementId: "G-HT4LSQ3EDS"
 };
 
 

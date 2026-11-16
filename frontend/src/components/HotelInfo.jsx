@@ -152,6 +152,36 @@ const hotelStyles = `
 .bb-menu-tab:hover { border-color: #d8b46a; color: #d8b46a; }
 .bb-menu-tab.active { background: #d8b46a; border-color: #d8b46a; color: #10292a; }
 
+.bb-menu-add {
+  margin-top: 14px;
+  background: #d8b46a;
+  color: #10292a;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+.bb-menu-add:hover { background: #e6c680; transform: translateY(-1px); }
+.bb-tray {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1500;
+  background: #10292a;
+  color: #d8b46a;
+  border: 1px solid #d8b46a;
+  border-radius: 999px;
+  padding: 14px 24px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+.bb-tray:hover { transform: translateY(-2px); background: #17393a; }
 .bb-overlay { animation: bbFade 0.25s ease; }
 .bb-modal { animation: bbRise 0.3s ease; }
 @keyframes bbFade { from { opacity: 0; } to { opacity: 1; } }
@@ -239,6 +269,453 @@ const hotelStyles = `
 }
 `;
 
+const API = "http://localhost:8080/api";
+
+const peso = (value) => "₱" + Number(value || 0).toLocaleString("en-PH");
+
+const foodOverlayStyle = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "100%",
+  backgroundColor: "rgba(8, 22, 22, 0.65)",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  zIndex: 2000,
+};
+
+const foodModalStyle = {
+  backgroundColor: "#faf6ec",
+  borderTop: "5px solid #d8b46a",
+  padding: "28px",
+  borderRadius: "16px",
+  maxWidth: "520px",
+  width: "92%",
+  maxHeight: "92vh",
+  overflowY: "auto",
+  position: "relative",
+  boxSizing: "border-box",
+  boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+  colorScheme: "light",
+};
+
+const closeStyle = {
+  position: "absolute",
+  top: "14px",
+  right: "14px",
+  width: "34px",
+  height: "34px",
+  borderRadius: "50%",
+  border: "none",
+  background: "none",
+  fontSize: "1.1rem",
+  cursor: "pointer",
+  color: "#666",
+};
+
+const qtyButton = {
+  width: "28px",
+  height: "28px",
+  borderRadius: "50%",
+  border: "1px solid #d9cba5",
+  background: "#fff",
+  color: "#1d3f40",
+  fontWeight: "700",
+  cursor: "pointer",
+  lineHeight: 1,
+};
+
+const parsePrice = (text) => {
+  const match = String(text).match(/\d+/);
+  return match ? Number(match[0]) : 0;
+};
+
+function FoodOrder({ cart, setCart, user, onClose }) {
+  const [phone, setPhone] = useState("");
+  const [roomNumber, setRoomNumber] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [placedOrder, setPlacedOrder] = useState(null);
+
+  const lines = Object.values(cart);
+  const total = lines.reduce((sum, line) => sum + line.price * line.qty, 0);
+
+  const changeQty = (title, delta) => {
+    setCart((prev) => {
+      const line = prev[title];
+      if (!line) return prev;
+      const qty = line.qty + delta;
+      const next = { ...prev };
+      if (qty <= 0) delete next[title];
+      else next[title] = { ...line, qty: Math.min(qty, 50) };
+      return next;
+    });
+  };
+
+  const submitOrder = async (e) => {
+    e.preventDefault();
+    if (lines.length === 0) return;
+    setError("");
+    setSubmitting(true);
+    try {
+      const response = await fetch(`${API}/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guestName: user.name || user.displayName || "",
+          email: user.email,
+          phone: phone.replace(/[\s-]/g, ""),
+          roomNumber: roomNumber.trim(),
+          notes: notes.trim(),
+          items: lines.map((l) => ({ title: l.title, price: l.price, qty: l.qty })),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setError(result.message || "Your order could not be sent.");
+        return;
+      }
+      setPlacedOrder(result);
+      setCart({});
+    } catch (err) {
+      console.error(err);
+      setError("Cannot reach the server. Make sure the backend is running on port 8080.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="bb-overlay" onClick={onClose} style={foodOverlayStyle}>
+      <div className="bb-modal" onClick={(e) => e.stopPropagation()} style={foodModalStyle}>
+        <button className="bb-close" onClick={onClose} aria-label="Close" style={closeStyle}>
+          ✕
+        </button>
+
+        {placedOrder ? (
+          <div>
+            <div
+              style={{
+                backgroundColor: "#fff4dc",
+                color: "#8a5a00",
+                padding: "12px",
+                borderRadius: "8px",
+                textAlign: "center",
+                fontWeight: "bold",
+                margin: "6px 30px 20px 0",
+              }}
+            >
+              Order received. The kitchen will confirm it shortly.
+            </div>
+            <div style={{ border: "1px dashed #1d3f40", borderRadius: "10px", padding: "20px", backgroundColor: "#fffdf7" }}>
+              <div style={{ textAlign: "center", borderBottom: "1px solid #ddd", paddingBottom: "10px", marginBottom: "14px" }}>
+                <h3 style={{ margin: 0, color: "#1d3f40" }}>HYTECH HOTEL AND BISTRO</h3>
+                <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#666" }}>Food Order Receipt</p>
+              </div>
+              <div style={{ fontSize: "0.9rem", lineHeight: "1.8", color: "#333" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <strong>Order Reference:</strong>
+                  <span style={{ color: "#9a7430", fontWeight: "bold" }}>{placedOrder.code}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <strong>Room or table:</strong>
+                  <span>{placedOrder.roomNumber || "Not specified"}</span>
+                </div>
+                {placedOrder.items.map((item) => (
+                  <div key={item.title} style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                    <span>{item.qty} × {item.title}</span>
+                    <span>{peso(item.price * item.qty)}</span>
+                  </div>
+                ))}
+                {placedOrder.notes && (
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                    <strong>Special requests:</strong>
+                    <span style={{ textAlign: "right" }}>{placedOrder.notes}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", borderTop: "2px solid #1d3f40", marginTop: "12px", paddingTop: "10px", fontSize: "1.1rem" }}>
+                  <strong>Total to pay:</strong>
+                  <strong style={{ color: "#1d3f40" }}>{peso(placedOrder.totalAmount)}</strong>
+                </div>
+              </div>
+            </div>
+            <p style={{ textAlign: "center", fontSize: "0.85rem", color: "#666", margin: "14px 0" }}>
+              Pay when your order is served. You can check its status anytime in My Bookings.
+            </p>
+            <button className="bb-submit" onClick={onClose}>Close</button>
+          </div>
+        ) : (
+          <form onSubmit={submitOrder}>
+            <h3 style={{ margin: "0 0 4px", color: "#1d3f40", fontSize: "1.5rem" }}>Your order</h3>
+            <p style={{ margin: "0 0 18px", color: "#777", fontSize: "0.9rem" }}>
+              Review your items, then send the order to the bistro.
+            </p>
+
+            {lines.length === 0 ? (
+              <div style={{ padding: "24px", border: "1px dashed #cdb98a", borderRadius: "10px", textAlign: "center", color: "#8a7a55", marginBottom: "16px" }}>
+                Your order is empty. Add dishes from the menu.
+              </div>
+            ) : (
+              <div style={{ marginBottom: "16px" }}>
+                {lines.map((line) => (
+                  <div
+                    key={line.title}
+                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 0", borderBottom: "1px solid #e3d6b6" }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: "600", color: "#1d3f40" }}>{line.title}</div>
+                      <div style={{ fontSize: "0.82rem", color: "#777" }}>{peso(line.price)} each</div>
+                    </div>
+                    <button type="button" style={qtyButton} onClick={() => changeQty(line.title, -1)} aria-label="Remove one">−</button>
+                    <span style={{ minWidth: "20px", textAlign: "center", fontWeight: "700" }}>{line.qty}</span>
+                    <button type="button" style={qtyButton} onClick={() => changeQty(line.title, 1)} aria-label="Add one">+</button>
+                    <span style={{ minWidth: "70px", textAlign: "right", fontWeight: "700", color: "#1d3f40" }}>
+                      {peso(line.price * line.qty)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="bb-grid-2 bb-field">
+              <div>
+                <label className="bb-label" htmlFor="orderPhone">Contact number</label>
+                <input
+                  id="orderPhone"
+                  className="bb-input"
+                  type="tel"
+                  placeholder="09XX XXX XXXX"
+                  required
+                  pattern="^(\+?63|0)9[\d\s\-]{9,12}$"
+                  title="Enter a mobile number like 0917 123 4567"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="bb-label" htmlFor="orderRoom">Room number or table</label>
+                <input
+                  id="orderRoom"
+                  className="bb-input"
+                  type="text"
+                  placeholder="Room 204 or Table 5"
+                  value={roomNumber}
+                  onChange={(e) => setRoomNumber(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="bb-field">
+              <label className="bb-label" htmlFor="orderNotes">Special requests (optional)</label>
+              <textarea
+                id="orderNotes"
+                className="bb-input"
+                rows={2}
+                placeholder="No onions, extra rice, etc."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                style={{ resize: "vertical" }}
+              />
+            </div>
+
+            {error && (
+              <div style={{ backgroundColor: "#fbe9e7", color: "#b22222", padding: "10px 12px", borderRadius: "8px", fontSize: "0.88rem", marginBottom: "14px" }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", marginBottom: "10px" }}>
+              <span style={{ fontWeight: "600", color: "#1d3f40" }}>Total</span>
+              <strong style={{ fontSize: "1.3rem", color: "#1d3f40" }}>{peso(total)}</strong>
+            </div>
+
+            <button type="submit" className="bb-submit" disabled={lines.length === 0 || submitting}>
+              {submitting ? "Sending order..." : "Place order"}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const myOverlayStyle = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "100%",
+  backgroundColor: "rgba(8, 22, 22, 0.65)",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  zIndex: 2000,
+};
+
+const myModalStyle = {
+  backgroundColor: "#faf6ec",
+  borderTop: "5px solid #d8b46a",
+  padding: "28px",
+  borderRadius: "16px",
+  maxWidth: "640px",
+  width: "92%",
+  maxHeight: "92vh",
+  overflowY: "auto",
+  position: "relative",
+  boxSizing: "border-box",
+  boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+  colorScheme: "light",
+};
+
+const statusTone = {
+  Pending: { bg: "#fff4dc", color: "#8a5a00" },
+  Confirmed: { bg: "#e6f4ea", color: "#1e6b34" },
+  Cancelled: { bg: "#fbe9e7", color: "#b22222" },
+  Preparing: { bg: "#e3eefb", color: "#1a4f8b" },
+  Served: { bg: "#e6f4ea", color: "#1e6b34" },
+};
+
+const badge = (status) => ({
+  display: "inline-block",
+  padding: "3px 10px",
+  borderRadius: "999px",
+  fontSize: "0.78rem",
+  fontWeight: "700",
+  backgroundColor: (statusTone[status] || statusTone.Pending).bg,
+  color: (statusTone[status] || statusTone.Pending).color,
+});
+
+const statusMessage = (r) => {
+  if (r.status === "Confirmed") {
+    return `Your booking is confirmed. Your room is ${r.roomNumber}.`;
+  }
+  if (r.status === "Cancelled") return "This booking was cancelled.";
+  return "Waiting for the hotel to confirm. We will text you once it is confirmed.";
+};
+
+function MyBookings({ user, onClose, onViewReceipt }) {
+  const [reservations, setReservations] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const email = encodeURIComponent(user.email);
+    Promise.all([
+      fetch(`${API}/reservations?email=${email}`).then((r) => r.json()),
+      fetch(`${API}/orders?email=${email}`).then((r) => r.json()),
+    ])
+      .then(([resData, orderData]) => {
+        if (!active) return;
+        setReservations(Array.isArray(resData) ? resData : []);
+        setOrders(Array.isArray(orderData) ? orderData : []);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (active) setError("Cannot reach the server. Make sure the backend is running on port 8080.");
+      })
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [user.email]);
+
+  return (
+    <div className="bb-overlay" onClick={onClose} style={myOverlayStyle}>
+      <div className="bb-modal" onClick={(e) => e.stopPropagation()} style={myModalStyle}>
+        <button
+          className="bb-close"
+          onClick={onClose}
+          aria-label="Close"
+          style={{ position: "absolute", top: "14px", right: "14px", width: "34px", height: "34px", borderRadius: "50%", border: "none", background: "none", fontSize: "1.1rem", cursor: "pointer", color: "#666" }}
+        >
+          ✕
+        </button>
+
+        <h3 style={{ margin: "0 0 4px", color: "#1d3f40", fontSize: "1.5rem" }}>My bookings</h3>
+        <p style={{ margin: "0 0 20px", color: "#777", fontSize: "0.9rem" }}>
+          Your reservations and food orders for {user.email}.
+        </p>
+
+        {loading && <p style={{ color: "#777" }}>Loading...</p>}
+        {error && (
+          <div style={{ backgroundColor: "#fbe9e7", color: "#b22222", padding: "10px 12px", borderRadius: "8px", fontSize: "0.88rem" }}>
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && reservations.length === 0 && (
+          <div style={{ padding: "22px", border: "1px dashed #cdb98a", borderRadius: "10px", textAlign: "center", color: "#8a7a55", marginBottom: "20px" }}>
+            You have no room bookings yet.
+          </div>
+        )}
+
+        {reservations.map((r) => (
+          <div key={r.id} style={{ border: "1px solid #e3d6b6", borderRadius: "12px", padding: "16px", marginBottom: "14px", backgroundColor: "#fffdf7" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <strong style={{ color: "#9a7430" }}>{r.code}</strong>
+              <span style={badge(r.status)}>{r.status}</span>
+            </div>
+            <div style={{ fontWeight: "700", color: "#1d3f40" }}>{r.roomType}</div>
+            <div style={{ fontSize: "0.88rem", color: "#555", margin: "2px 0 8px" }}>
+              {formatDate(r.checkIn)} to {formatDate(r.checkOut)} · {r.nights} night{r.nights > 1 ? "s" : ""} · {peso(r.totalAmount)}
+            </div>
+            <div style={{ ...badgeBox(r.status) }}>{statusMessage(r)}</div>
+            <div style={{ fontSize: "0.82rem", color: "#666", margin: "8px 0" }}>
+              Payment: {r.paymentMethod} · {r.paymentStatus}
+              {r.notes ? ` · Request: ${r.notes}` : ""}
+            </div>
+            <button
+              type="button"
+              onClick={() => onViewReceipt(r)}
+              style={{ backgroundColor: "#10292a", color: "#d8b46a", border: "none", padding: "8px 16px", borderRadius: "6px", fontWeight: "600", cursor: "pointer" }}
+            >
+              View receipt
+            </button>
+          </div>
+        ))}
+
+        {orders.length > 0 && (
+          <div style={{ marginTop: "24px" }}>
+            <h4 style={{ margin: "0 0 12px", color: "#1d3f40" }}>Food orders</h4>
+            {orders.map((o) => (
+              <div key={o.id} style={{ border: "1px solid #e3d6b6", borderRadius: "12px", padding: "14px", marginBottom: "12px", backgroundColor: "#fffdf7" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <strong style={{ color: "#9a7430" }}>{o.code}</strong>
+                  <span style={badge(o.status)}>{o.status}</span>
+                </div>
+                <div style={{ fontSize: "0.88rem", color: "#444" }}>
+                  {o.items.map((i) => `${i.qty} × ${i.title}`).join(", ")}
+                </div>
+                <div style={{ fontSize: "0.82rem", color: "#666", marginTop: "4px" }}>
+                  {o.roomNumber ? `For ${o.roomNumber} · ` : ""}Total {peso(o.totalAmount)}
+                  {o.notes ? ` · Request: ${o.notes}` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function badgeBox(status) {
+  const tone = statusTone[status] || statusTone.Pending;
+  return {
+    backgroundColor: tone.bg,
+    color: tone.color,
+    padding: "8px 12px",
+    borderRadius: "8px",
+    fontSize: "0.88rem",
+    fontWeight: "600",
+  };
+}
+
 const toDateInputValue = (date) => {
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
@@ -259,6 +736,9 @@ const formatDate = (dateString) => {
   });
 };
 
+const GCASH_NUMBER = "0923-456-7890";
+const GCASH_NAME = "Hytech Hotel and Bistro";
+
 const emptyForm = {
   guestName: "",
   email: "",
@@ -268,6 +748,7 @@ const emptyForm = {
   checkOut: "",
   guests: 1,
   paymentMethod: "GCash",
+  paymentReference: "",
   notes: "",
 };
 
@@ -279,6 +760,13 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
   const [formData, setFormData] = useState(emptyForm);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [pendingBooking, setPendingBooking] = useState(null);
+  const [cart, setCart] = useState({});
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isMyBookingsOpen, setIsMyBookingsOpen] = useState(false);
+  const [voucherInput, setVoucherInput] = useState("");
+  const [voucher, setVoucher] = useState(null);
+  const [voucherMsg, setVoucherMsg] = useState("");
+  const [voucherBusy, setVoucherBusy] = useState(false);
 
   const navLinkStyle = {
     margin: "0 15px",
@@ -456,10 +944,35 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
 
   const menuCategories = ["All", "Breakfast", "Seafood", "Coffee", "Drinks"];
 
+  const addToCart = (item) => {
+    setCart((prev) => {
+      const existing = prev[item.title];
+      return {
+        ...prev,
+        [item.title]: {
+          title: item.title,
+          price: parsePrice(item.price),
+          qty: existing ? Math.min(existing.qty + 1, 50) : 1,
+        },
+      };
+    });
+  };
+
+  const cartCount = Object.values(cart).reduce((sum, line) => sum + line.qty, 0);
+
+  const handleOpenCart = () => {
+    if (!user) {
+      setPendingBooking(null);
+      setIsLoginOpen(true);
+      return;
+    }
+    setIsCartOpen(true);
+  };
+
   const visibleFood =
     menuFilter === "All" ? foodItems : foodItems.filter((f) => f.category === menuFilter);
 
-  const paymentOptions = ["GCash", "Cash", "Bank Transfer", "Credit/Debit Card"];
+  const paymentOptions = ["GCash", "Cash",];
 
   const today = toDateInputValue(new Date());
   const selectedRoom = rooms.find((r) => r.name === formData.roomType) || rooms[0];
@@ -475,7 +988,43 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
   };
 
   const nights = calculateNights();
-  const totalAmount = nights * selectedRoom.price;
+  const baseAmount = nights * selectedRoom.price;
+  const discountAmount = voucher
+    ? Math.min(
+        baseAmount,
+        Math.round((voucher.discountType === "fixed" ? voucher.discountValue : (baseAmount * voucher.discountValue) / 100) * 100) / 100
+      )
+    : 0;
+  const totalAmount = Math.max(0, baseAmount - discountAmount);
+
+  const applyVoucher = async () => {
+    const code = voucherInput.trim();
+    if (!code) return;
+    setVoucherBusy(true);
+    setVoucherMsg("");
+    try {
+      const response = await fetch(`${API}/vouchers/check?code=${encodeURIComponent(code)}&amount=${baseAmount}`);
+      const result = await response.json();
+      if (!response.ok) {
+        setVoucher(null);
+        setVoucherMsg(result.message || "This discount code is not valid.");
+        return;
+      }
+      setVoucher(result);
+    } catch (error) {
+      console.error(error);
+      setVoucher(null);
+      setVoucherMsg("Cannot reach the server.");
+    } finally {
+      setVoucherBusy(false);
+    }
+  };
+
+  const removeVoucher = () => {
+    setVoucher(null);
+    setVoucherInput("");
+    setVoucherMsg("");
+  };
 
   const openBookingForm = (roomName) => {
     setFormData({
@@ -485,6 +1034,7 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
       roomType: roomName || emptyForm.roomType,
     });
     setBookingReceipt(null);
+    removeVoucher();
     setIsModalOpen(true);
   };
 
@@ -540,25 +1090,27 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
     setFormData((prev) => ({ ...prev, paymentMethod: method }));
   };
 
-  // TUGMA NA SA BACKEND SERVER.JS ANG MGA PROPERTY NAMES DITO:
+ 
   const handleSubmitBooking = async (e) => {
     e.preventDefault();
     if (!datesValid) return;
 
     try {
-      const response = await fetch("http://localhost:8080/api/reservations", {
+      const response = await fetch(`${API}/reservations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           guestName: formData.guestName,
           email: formData.email,
-          phone: formData.phone,
+          phone: formData.phone.replace(/[\s-]/g, ""),
           roomType: formData.roomType,
           checkIn: formData.checkIn,
           checkOut: formData.checkOut,
           guests: formData.guests,
           paymentMethod: formData.paymentMethod,
-          notes: formData.notes,
+          paymentReference: formData.paymentMethod === "GCash" ? formData.paymentReference.trim() : null,
+          voucherCode: voucher ? voucher.code : null,
+          notes: formData.notes.trim() || null,
         }),
       });
 
@@ -569,16 +1121,7 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
         return;
       }
 
-      const reservationData = {
-        id: result.code || result.id || "RES-" + Date.now().toString().slice(-6),
-        ...formData,
-        nights,
-        totalAmount,
-        status: "Pending",
-        createdAt: new Date().toISOString(),
-      };
-
-      setBookingReceipt(reservationData);
+      setBookingReceipt(result.reservation);
     } catch (error) {
       console.error("Error submitting reservation:", error);
       alert("Hindi makakonekta sa backend server. Siguraduhing tumatakbo ang server sa port 8080.");
@@ -589,6 +1132,13 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
     setIsModalOpen(false);
     setBookingReceipt(null);
     setFormData(emptyForm);
+    removeVoucher();
+  };
+
+  const handleViewReceipt = (reservation) => {
+    setIsMyBookingsOpen(false);
+    setBookingReceipt(reservation);
+    setIsModalOpen(true);
   };
 
   const receiptRowStyle = { display: "flex", justifyContent: "space-between", gap: "12px" };
@@ -599,13 +1149,30 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
         ["Email:", bookingReceipt.email],
         ["Contact Phone:", bookingReceipt.phone],
         ["Selected Room:", bookingReceipt.roomType],
+        ["Room Number:", bookingReceipt.roomNumber || "Assigned once confirmed"],
         ["Guests:", bookingReceipt.guests],
         ["Check-In Date:", formatDate(bookingReceipt.checkIn)],
         ["Check-Out Date:", formatDate(bookingReceipt.checkOut)],
         ["Duration:", `${bookingReceipt.nights} night(s)`],
         ["Payment Method:", bookingReceipt.paymentMethod],
+        ...(bookingReceipt.paymentMethod === "GCash" && bookingReceipt.paymentReference
+          ? [["GCash Reference:", bookingReceipt.paymentReference]]
+          : []),
+        ["Payment Status:", bookingReceipt.paymentStatus || "Unpaid"],
+        ...(Number(bookingReceipt.discountAmount) > 0
+          ? [[`Discount (${bookingReceipt.voucherCode}):`, "-" + peso(bookingReceipt.discountAmount)]]
+          : []),
+        ["Special Requests:", bookingReceipt.notes || "None"],
+        ["Booking Status:", bookingReceipt.status],
       ]
     : [];
+
+  const receiptTones = {
+    Pending: { bg: "#fff4dc", color: "#8a5a00", text: "Reservation received. Waiting for the hotel to confirm it." },
+    Confirmed: { bg: "#e6f4ea", color: "#1e6b34", text: "Booking confirmed" },
+    Cancelled: { bg: "#fbe9e7", color: "#b22222", text: "This booking was cancelled" },
+  };
+  const receiptTone = receiptTones[bookingReceipt?.status] || receiptTones.Pending;
 
   const authButtonStyle = {
     marginLeft: "12px",
@@ -660,7 +1227,7 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
         }}
       >
         <h2 style={{ fontWeight: "700", color: "#f3ead7", margin: 0 }}>
-          BONGABONG VIEW HOTEL AND BISTRO
+          Hytech Hotel & Bistro
         </h2>
         <nav style={{ display: "flex", alignItems: "center" }}>
           <a href="#home" style={navLinkStyle}>
@@ -692,6 +1259,16 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
           >
             Booking
           </button>
+          {user && (
+            <button
+              onClick={() => setIsMyBookingsOpen(true)}
+              style={authButtonStyle}
+              onMouseOver={authButtonOver}
+              onMouseOut={authButtonOut}
+            >
+              My Bookings
+            </button>
+          )}
           {user ? (
             <button
               onClick={onLogout}
@@ -752,7 +1329,7 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
               margin: "10px 0",
             }}
           >
-            Experience Comfort in the Heart of Bongabong View Hotel And Bistro
+            Experience Comfort in the Heart of Hytech Hotel & Bistro
           </h1>
           <p style={{ fontSize: "1.2rem", color: "#e6dcc6" }}>
             Immaculate accommodations, seamless booking, and exceptional hospitality.
@@ -996,6 +1573,16 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                 <h4 className="bb-menu-title">{item.title}</h4>
                 <div className="bb-menu-line" />
                 <p className="bb-menu-desc">{item.desc}</p>
+                <button
+                  type="button"
+                  className="bb-menu-add"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    addToCart(item);
+                  }}
+                >
+                  {cart[item.title] ? `Add another (${cart[item.title].qty} in order)` : "Add to order"}
+                </button>
               </div>
             </div>
           ))}
@@ -1018,10 +1605,10 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
             <strong>Address:</strong> Bongabong, Oriental Mindoro, Philippines
           </p>
           <p>
-            <strong>Phone:</strong> +63 (043) 123-4567
+            <strong>Phone:</strong> +63 (09) 66793-2441
           </p>
           <p>
-            <strong>Email:</strong> bongabongviewhotel@gmail.com
+            <strong>Email:</strong> hytechhotel@gmail.com
           </p>
         </div>
       </section>
@@ -1041,7 +1628,7 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
         }}
       >
         <p style={{ margin: 0 }}>
-          © {new Date().getFullYear()} BONGABONG VIEW HOTEL AND BISTRO. All rights reserved.
+          © {new Date().getFullYear()} Hytech HOTEL AND BISTRO. All rights reserved.
         </p>
       </footer>
 
@@ -1105,8 +1692,8 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
               <div>
                 <div
                   style={{
-                    backgroundColor: "#e6f4ea",
-                    color: "#1e6b34",
+                    backgroundColor: receiptTone.bg,
+                    color: receiptTone.color,
                     padding: "12px",
                     borderRadius: "8px",
                     textAlign: "center",
@@ -1115,7 +1702,7 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                     fontSize: "1.05rem",
                   }}
                 >
-                  Booking confirmed & saved to database!
+                  {receiptTone.text}
                 </div>
 
                 <div
@@ -1134,7 +1721,7 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                       marginBottom: "15px",
                     }}
                   >
-                    <h3 style={{ margin: 0, color: "#1d3f40" }}>BONGABONG VIEW HOTEL AND BISTRO</h3>
+                    <h3 style={{ margin: 0, color: "#1d3f40" }}>HYTECH HOTEL AND BISTRO</h3>
                     <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "#666" }}>
                       Official Reservation Receipt
                     </p>
@@ -1161,9 +1748,9 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                         fontSize: "1.1rem",
                       }}
                     >
-                      <span><strong>Total Amount Paid/Due:</strong></span>
+                      <span><strong>Total Amount:</strong></span>
                       <span style={{ color: "#1d3f40", fontWeight: "bold" }}>
-                        ₱{bookingReceipt.totalAmount.toLocaleString()}
+                        {peso(bookingReceipt.totalAmount)}
                       </span>
                     </div>
                   </div>
@@ -1177,7 +1764,7 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                     marginTop: "15px",
                   }}
                 >
-                  Thank you for booking with BONGABONG VIEW HOTEL AND BISTRO! Your reservation has been recorded in the database.
+                  Thank you for booking with HYTECH HOTEL AND BISTRO! Keep this receipt. You can open it again anytime from My Bookings, and we will text you when the hotel confirms.
                 </p>
 
                 <button
@@ -1269,6 +1856,8 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                         name="phone"
                         placeholder="09XX XXX XXXX"
                         required
+                        pattern="^(\+?63|0)9[\d\s\-]{9,12}$"
+                        title="Enter a mobile number like 0917 123 4567. We text your booking updates to this number."
                         value={formData.phone}
                         onChange={handleInputChange}
                       />
@@ -1355,6 +1944,64 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                     </div>
                   </div>
 
+                  {formData.paymentMethod === "GCash" && (
+                    <div
+                      className="bb-field"
+                      style={{ padding: "14px", border: "1px solid #dcc99b", borderRadius: "10px", backgroundColor: "#f3ead7" }}
+                    >
+                      <div style={{ fontSize: "0.88rem", color: "#1d3f40", lineHeight: 1.6, marginBottom: "10px" }}>
+                        Send {datesValid ? peso(totalAmount) : "the total"} to GCash number <strong>{GCASH_NUMBER}</strong> ({GCASH_NAME}), then enter the reference number from your GCash receipt.
+                      </div>
+                      <label className="bb-label" htmlFor="paymentReference">GCash reference number</label>
+                      <input
+                        id="paymentReference"
+                        className="bb-input"
+                        type="text"
+                        name="paymentReference"
+                        placeholder="13-digit reference number"
+                        required
+                        minLength={6}
+                        value={formData.paymentReference}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                  )}
+
+                  <div className="bb-field">
+                    <label className="bb-label" htmlFor="voucherCode">Discount code (optional)</label>
+                    {voucher ? (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", padding: "10px 12px", borderRadius: "8px", backgroundColor: "#e6f4ea", color: "#1e6b34", fontWeight: "600", fontSize: "0.9rem" }}>
+                        <span>
+                          {voucher.code} applied
+                          {voucher.discountType === "percent" ? ` (${voucher.discountValue}% off)` : ` (${peso(voucher.discountValue)} off)`}
+                        </span>
+                        <button type="button" onClick={removeVoucher} style={{ background: "none", border: "none", color: "#1e6b34", cursor: "pointer", fontWeight: "700", textDecoration: "underline" }}>
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <input
+                          id="voucherCode"
+                          className="bb-input"
+                          type="text"
+                          placeholder="Enter code"
+                          value={voucherInput}
+                          onChange={(e) => setVoucherInput(e.target.value.toUpperCase())}
+                        />
+                        <button
+                          type="button"
+                          onClick={applyVoucher}
+                          disabled={voucherBusy || !voucherInput.trim()}
+                          style={{ backgroundColor: "#10292a", color: "#d8b46a", border: "none", borderRadius: "8px", padding: "0 18px", fontWeight: "700", cursor: "pointer", opacity: voucherBusy || !voucherInput.trim() ? 0.5 : 1 }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    )}
+                    {voucherMsg && <div style={{ color: "#b22222", fontSize: "0.82rem", marginTop: "6px" }}>{voucherMsg}</div>}
+                  </div>
+
                   <div className="bb-field">
                     <label className="bb-label" htmlFor="notes">Special requests (optional)</label>
                     <textarea
@@ -1393,6 +2040,12 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                         </span>
                         <span>{formatDate(formData.checkIn)} to {formatDate(formData.checkOut)}</span>
                       </div>
+                      {discountAmount > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", color: "#1e6b34", marginBottom: "6px" }}>
+                          <span>Discount ({voucher.code})</span>
+                          <span>-{peso(discountAmount)}</span>
+                        </div>
+                      )}
                       <div
                         style={{
                           display: "flex",
@@ -1427,13 +2080,27 @@ export default function HotelInfo({ user, onLogin, onGoogleLogin, onSignup, auth
                   )}
 
                   <button type="submit" className="bb-submit" disabled={!datesValid}>
-                    Confirm Booking
+                    Submit booking
                   </button>
                 </form>
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {cartCount > 0 && !isCartOpen && (
+        <button type="button" className="bb-tray" onClick={handleOpenCart}>
+          View order ({cartCount})
+        </button>
+      )}
+
+      {isCartOpen && user && (
+        <FoodOrder cart={cart} setCart={setCart} user={user} onClose={() => setIsCartOpen(false)} />
+      )}
+
+      {isMyBookingsOpen && user && (
+        <MyBookings user={user} onClose={() => setIsMyBookingsOpen(false)} onViewReceipt={handleViewReceipt} />
       )}
 
       {isLoginOpen && !user && (

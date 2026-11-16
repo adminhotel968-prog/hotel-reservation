@@ -67,7 +67,7 @@ export default function LoginModal({ onLogin, onGoogleLogin, onSignup, authError
       >
         <div className="row g-0">
           <div className="col-lg-5 d-none d-lg-flex flex-column justify-content-end p-5 text-white" style={{ minHeight: 560, background: 'linear-gradient(rgba(0,0,0,.15),rgba(0,0,0,.72)), url(https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=1000&q=80) center/cover' }}>
-            <span className="text-uppercase small fw-bold" style={{ letterSpacing: 2 }}>BONGABONG VIEW HOTEL AND BISTRO</span>
+            <span className="text-uppercase small fw-bold" style={{ letterSpacing: 2 }}>HYTECH HOTEL AND BISTRO</span>
             <h1 className="display-6 fw-bold">Stay comfortable. Reserve with ease.</h1>
 
             <p className="mb-0">Clean rooms, simple booking, and a comfortable stay in BONGABONG.</p>
@@ -84,7 +84,7 @@ export default function LoginModal({ onLogin, onGoogleLogin, onSignup, authError
             )}
 
             <div className="mb-4">
-              <div className="fw-bold small text-uppercase" style={{ color: '#9a7430' }}>BONGABONG VIEW HOTEL AND BISTRO </div>
+              <div className="fw-bold small text-uppercase" style={{ color: '#9a7430' }}>HYTECH HOTEL AND BISTRO </div>
               <h2 className="fw-bold mb-1">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
               <p className="text-muted mb-0">{mode === 'login' ? 'Sign in to manage your room reservations.' : 'Create a customer account to reserve a room.'}</p>
             </div>

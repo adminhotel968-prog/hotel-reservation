@@ -38,28 +38,17 @@ export default function App() {
         if (snapshot.exists()) {
           data = snapshot.data()
         } else {
-          const isGoogleUser = firebaseUser.providerData.some(
-            (provider) => provider.providerId === 'google.com'
-          )
-
-          if (isGoogleUser) {
-            data = {
-              uid: firebaseUser.uid,
-              name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Customer',
-              email: firebaseUser.email || '',
-              photoURL: firebaseUser.photoURL || '',
-              role: 'customer',
-              createdAt: serverTimestamp(),
-            }
-            await setDoc(userRef, data)
-          } else {
-            await signOut(auth)
-            setAuthError('Your account profile was not found. Please sign up again.')
-            setUser(null)
-            setProfile(null)
-            setLoading(false)
-            return
+          // Kung walang pang-profile sa Firestore pero naka-log in na (hal. manual galing sa console o iba pang method)
+          data = {
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Customer',
+            email: firebaseUser.email || '',
+            photoURL: firebaseUser.photoURL || '',
+            role: 'customer', // default role para hindi mag-error
+            createdAt: serverTimestamp(),
           }
+          // Awtomatikong isasave ito sa 'users' collection para hindi na ma-404/error
+          await setDoc(userRef, data)
         }
 
         const normalizedRole = String(data.role || '').toLowerCase()
@@ -113,6 +102,7 @@ export default function App() {
       displayName: name.trim(),
     })
 
+    // Sine-save agad nang diretso sa 'users' collection kasama ang UID ng user
     await setDoc(doc(db, 'users', credential.user.uid), {
       uid: credential.user.uid,
       name: name.trim(),
