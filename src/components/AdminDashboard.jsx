@@ -246,6 +246,7 @@ export default function AdminDashboard({ onLogout, currentUser }) {
     { id: "Bookings", label: "Bookings" },
     { id: "Clients", label: "Clients" },
     { id: "Rooms", label: "Rooms" },
+    { id: "Keys", label: "Key Management" },
     { id: "Discounts", label: "Discounts" },
     { id: "Food Orders", label: "Food Orders" },
     { id: "Extras", label: "Extras" },
@@ -1127,7 +1128,7 @@ export default function AdminDashboard({ onLogout, currentUser }) {
           )}
 
           {activeTab === "Rooms" && <AdminRoomsTab rooms={rooms} onSaved={loadRooms} />}
-
+          {activeTab === "Keys" && <AdminKeysTab reservations={reservations} />}
           {activeTab === "Discounts" && <AdminVouchersTab />}
 
           {activeTab === "Food Orders" && <AdminOrdersTab />}
@@ -1961,6 +1962,373 @@ function AdminRoomsTab({ rooms, onSaved }) {
                 <button type="submit" disabled={saving} style={adPrimaryButton}>
                   {saving ? "Saving..." : "Save changes"}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const KEY_STATUSES = ["Available", "Assigned", "Lost", "Damaged"];
+
+function localDateValue() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function createEmptyKeyForm() {
+  return {
+    keyCode: "",
+    keyType: "Access card",
+    roomNumber: "",
+    guestName: "",
+    reservationCode: "",
+    status: "Available",
+    issuedAt: "",
+    returnedAt: "",
+    notes: "",
+  };
+}
+
+function AdminKeysTab({ reservations }) {
+  const [keys, setKeys] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(createEmptyKeyForm);
+  const [editingKey, setEditingKey] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+
+  const loadKeys = useCallback(async () => {
+    try {
+      const response = await fetch(`${API}/keys`);
+      const result = await response.json();
+      if (!response.ok) {
+        setLoadError(result.message || "Could not load key records.");
+        return;
+      }
+      setLoadError("");
+      setKeys(result);
+    } catch (loadError) {
+      console.error("Failed to load key records:", loadError);
+      setLoadError("Cannot reach the server. Check that the hotel API is running.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadKeys();
+  }, [loadKeys]);
+
+  const openCreate = () => {
+    setEditingKey(null);
+    setForm(createEmptyKeyForm());
+    setError("");
+    setIsModalOpen(true);
+  };
+
+  const openEdit = (key) => {
+    setEditingKey(key);
+    setForm({
+      keyCode: key.keyCode || "",
+      keyType: key.keyType || "Access card",
+      roomNumber: key.roomNumber || "",
+      guestName: key.guestName || "",
+      reservationCode: key.reservationCode || "",
+      status: key.status || "Available",
+      issuedAt: key.issuedAt || "",
+      returnedAt: key.returnedAt || "",
+      notes: key.notes || "",
+    });
+    setError("");
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    if (saving) return;
+    setIsModalOpen(false);
+    setEditingKey(null);
+    setError("");
+  };
+
+  const change = (event) => {
+    const { name, value } = event.target;
+    setForm((previous) => {
+      if (name === "status") {
+        if (value === "Available") {
+          return {
+            ...previous,
+            status: value,
+            roomNumber: "",
+            guestName: "",
+            reservationCode: "",
+            returnedAt: previous.status === "Assigned" ? localDateValue() : previous.returnedAt,
+          };
+        }
+        return {
+          ...previous,
+          status: value,
+          issuedAt: value === "Assigned" ? previous.issuedAt || localDateValue() : previous.issuedAt,
+          returnedAt: value === "Assigned" ? "" : previous.returnedAt,
+        };
+      }
+      return { ...previous, [name]: value };
+    });
+  };
+
+  const selectReservation = (event) => {
+    const reservationCode = event.target.value;
+    const reservation = reservations.find((item) => String(item.id) === reservationCode);
+    setForm((previous) => ({
+      ...previous,
+      reservationCode,
+      guestName: reservation?.guestName || previous.guestName,
+      roomNumber: reservation?.roomNumber || previous.roomNumber,
+      status: reservation ? "Assigned" : previous.status,
+      issuedAt: reservation ? previous.issuedAt || localDateValue() : previous.issuedAt,
+      returnedAt: reservation ? "" : previous.returnedAt,
+    }));
+  };
+
+  const save = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`${API}/keys${editingKey ? `/${editingKey.id}` : ""}`, {
+        method: editingKey ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          keyCode: form.keyCode.trim(),
+          keyType: form.keyType.trim(),
+          roomNumber: form.roomNumber.trim(),
+          guestName: form.guestName.trim(),
+          notes: form.notes.trim(),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setError(result.message || "Could not save this key record.");
+        return;
+      }
+      setIsModalOpen(false);
+      setEditingKey(null);
+      setForm(createEmptyKeyForm());
+      await loadKeys();
+    } catch (saveError) {
+      console.error("Failed to save key record:", saveError);
+      setError("Cannot reach the server. Check that the hotel API is running.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (key) => {
+    if (!window.confirm(`Delete key record ${key.keyCode}?`)) return;
+    setLoadError("");
+    try {
+      const response = await fetch(`${API}/keys/${key.id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) {
+        setLoadError(result.message || "Could not delete this key record.");
+        return;
+      }
+      await loadKeys();
+    } catch (deleteError) {
+      console.error("Failed to delete key record:", deleteError);
+      setLoadError("Cannot reach the server. Check that the hotel API is running.");
+    }
+  };
+
+  const filteredKeys = keys.filter((key) => {
+    const query = search.trim().toLowerCase();
+    const matchesSearch = !query || [
+      key.keyCode,
+      key.keyType,
+      key.roomNumber,
+      key.guestName,
+      key.reservationCode,
+    ].some((value) => String(value || "").toLowerCase().includes(query));
+    return matchesSearch && (statusFilter === "All" || key.status === statusFilter);
+  });
+  const assignedCount = keys.filter((key) => key.status === "Assigned").length;
+  const attentionCount = keys.filter((key) => ["Lost", "Damaged"].includes(key.status)).length;
+
+  const statusStyle = (status) => ({
+    display: "inline-block",
+    padding: "4px 9px",
+    borderRadius: "999px",
+    fontSize: "0.76rem",
+    fontWeight: "700",
+    color: status === "Available" ? "#1e6b34" : status === "Assigned" ? "#805600" : "#b22222",
+    backgroundColor: status === "Available" ? "#e6f4ea" : status === "Assigned" ? "#fff4dc" : "#fbe9e7",
+  });
+
+  return (
+    <div style={adPanel}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" }}>
+        <div>
+          <h3 style={adHeading}>Key Management</h3>
+          <p style={adSubheading}>Issue and track room keys and access cards against guest reservations.</p>
+        </div>
+        <button type="button" onClick={openCreate} style={adPrimaryButton}>Add key</button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px", marginBottom: "20px" }}>
+        {[
+          ["Total keys", keys.length, "#2f4f4f"],
+          ["Available", keys.filter((key) => key.status === "Available").length, "#1e6b34"],
+          ["Assigned", assignedCount, "#805600"],
+          ["Lost / damaged", attentionCount, "#b22222"],
+        ].map(([label, count, color]) => (
+          <div key={label} style={{ padding: "16px", backgroundColor: "#fcfdfe", border: "1px solid #eef2f5", borderRadius: "8px" }}>
+            <div style={{ color: "#777", fontSize: "0.8rem" }}>{label}</div>
+            <strong style={{ display: "block", marginTop: "5px", color, fontSize: "1.3rem" }}>{count}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "16px" }}>
+        <input
+          aria-label="Search key records"
+          style={{ ...adInput, flex: "1 1 220px", marginTop: 0 }}
+          placeholder="Search key, room, guest or booking..."
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        <select
+          aria-label="Filter keys by status"
+          style={{ ...adInput, flex: "0 1 170px", marginTop: 0 }}
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+        >
+          <option value="All">All statuses</option>
+          {KEY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+        </select>
+      </div>
+
+      {loadError && (
+        <div style={adErrorBox}>
+          {loadError}{" "}
+          <button type="button" onClick={loadKeys} style={{ ...adGhostButton, marginLeft: "8px", padding: "4px 10px" }}>Retry</button>
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ padding: "24px", textAlign: "center", color: "#777" }}>Loading key records...</div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.86rem", minWidth: "850px" }}>
+            <thead>
+              <tr style={{ backgroundColor: "#2f4f4f", color: "white", textAlign: "left" }}>
+                {["Key", "Room / guest", "Reservation", "Issue / return", "Status", "Actions"].map((heading) => (
+                  <th key={heading} style={adTh}>{heading}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredKeys.length === 0 ? (
+                <tr>
+                  <td colSpan="6" style={{ padding: "28px", textAlign: "center", color: "#888" }}>
+                    {keys.length ? "No keys match these filters." : "No key records yet. Add a key to get started."}
+                  </td>
+                </tr>
+              ) : filteredKeys.map((key) => (
+                <tr key={key.id} style={{ borderBottom: "1px solid #f2f5f8" }}>
+                  <td style={{ padding: "13px 16px" }}>
+                    <strong style={{ color: "#2f4f4f" }}>{key.keyCode}</strong>
+                    <div style={{ color: "#888", fontSize: "0.78rem", marginTop: "3px" }}>{key.keyType}</div>
+                  </td>
+                  <td style={{ padding: "13px 16px" }}>
+                    {key.roomNumber ? <strong>Room {key.roomNumber}</strong> : "—"}
+                    <div style={{ color: "#777", fontSize: "0.8rem", marginTop: "3px" }}>{key.guestName || "No guest assigned"}</div>
+                  </td>
+                  <td style={{ padding: "13px 16px" }}>{key.reservationCode || "—"}</td>
+                  <td style={{ padding: "13px 16px", color: "#666" }}>
+                    <div>Issued: {key.issuedAt || "—"}</div>
+                    <div style={{ marginTop: "3px" }}>Returned: {key.returnedAt || "—"}</div>
+                  </td>
+                  <td style={{ padding: "13px 16px" }}><span style={statusStyle(key.status)}>{key.status}</span></td>
+                  <td style={{ padding: "13px 16px" }}>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button type="button" onClick={() => openEdit(key)} style={{ ...adGhostButton, padding: "6px 10px" }}>Edit</button>
+                      <button type="button" onClick={() => remove(key)} style={{ ...adDangerButton, padding: "6px 10px" }}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {isModalOpen && (
+        <div style={adOverlay} onClick={closeModal}>
+          <div style={adModal} onClick={(event) => event.stopPropagation()}>
+            <h3 style={{ marginTop: 0, color: "#2f4f4f", fontSize: "1.15rem", fontWeight: "700" }}>
+              {editingKey ? "Edit key record" : "Add key record"}
+            </h3>
+            <form onSubmit={save}>
+              {error && <div style={adErrorBox}>{error}</div>}
+              <div style={{ marginBottom: "12px" }}>
+                <label style={adLabel}>Key ID / label:</label>
+                <input style={adInput} name="keyCode" maxLength="60" required value={form.keyCode} onChange={change} placeholder="e.g. CARD-101" />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={adLabel}>Key type:</label>
+                <input style={adInput} name="keyType" maxLength="40" required value={form.keyType} onChange={change} placeholder="Access card, metal key..." />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={adLabel}>Link a reservation (optional):</label>
+                <select style={adInput} value={form.reservationCode} onChange={selectReservation}>
+                  <option value="">No reservation</option>
+                  {reservations.filter((item) => item.status !== "Cancelled").map((reservation) => (
+                    <option key={reservation.id} value={reservation.id}>
+                      {reservation.id} · {reservation.guestName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={adLabel}>Room number:</label>
+                  <input style={adInput} name="roomNumber" maxLength="20" required={form.status === "Assigned"} value={form.roomNumber} onChange={change} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={adLabel}>Guest name:</label>
+                  <input style={adInput} name="guestName" maxLength="120" required={form.status === "Assigned"} value={form.guestName} onChange={change} />
+                </div>
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={adLabel}>Status:</label>
+                <select style={adInput} name="status" value={form.status} onChange={change}>
+                  {KEY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={adLabel}>Issue date:</label>
+                  <input style={adInput} type="date" name="issuedAt" value={form.issuedAt} onChange={change} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={adLabel}>Return date:</label>
+                  <input style={adInput} type="date" name="returnedAt" value={form.returnedAt} onChange={change} />
+                </div>
+              </div>
+              <div style={{ marginBottom: "18px" }}>
+                <label style={adLabel}>Notes (optional):</label>
+                <textarea style={{ ...adInput, minHeight: "70px", resize: "vertical" }} name="notes" maxLength="500" value={form.notes} onChange={change} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button type="button" onClick={closeModal} disabled={saving} style={adGhostButton}>Cancel</button>
+                <button type="submit" disabled={saving} style={adPrimaryButton}>{saving ? "Saving..." : "Save key"}</button>
               </div>
             </form>
           </div>

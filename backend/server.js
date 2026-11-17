@@ -143,6 +143,118 @@ app.put("/api/rooms/:id", wrap(async (req, res) => {
   res.json({ message: "Room updated." });
 }));
 
+const KEY_STATUSES = ["Available", "Assigned", "Lost", "Damaged"];
+
+function parseKeyRecord(body) {
+  const keyCode = String(body.keyCode || "").trim();
+  const keyType = String(body.keyType || "").trim();
+  const roomNumber = String(body.roomNumber || "").trim();
+  const guestName = String(body.guestName || "").trim();
+  const reservationCode = String(body.reservationCode || "").trim();
+  const status = String(body.status || "Available");
+  const issuedAt = body.issuedAt || (status === "Assigned" ? new Date().toISOString().slice(0, 10) : null);
+  const returnedAt = body.returnedAt || null;
+  const notes = String(body.notes || "").trim();
+  const validDate = (date) => {
+    if (!date) return true;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+    const parsedDate = new Date(`${date}T00:00:00.000Z`);
+    return !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === date;
+  };
+
+  if (!keyCode || keyCode.length > 60)
+    return { error: "Key ID is required and must be 60 characters or fewer." };
+  if (!keyType || keyType.length > 40)
+    return { error: "Key type is required and must be 40 characters or fewer." };
+  if (!KEY_STATUSES.includes(status))
+    return { error: "Choose a valid key status." };
+  if (roomNumber.length > 20 || guestName.length > 120 || reservationCode.length > 50 || notes.length > 500)
+    return { error: "Room, guest, reservation or notes value is too long." };
+  if (status === "Assigned" && (!roomNumber || !guestName))
+    return { error: "An assigned key needs a room number and guest name." };
+  if (![issuedAt, returnedAt].every(validDate))
+    return { error: "Issue and return dates must be valid dates." };
+  if (issuedAt && returnedAt && returnedAt < issuedAt)
+    return { error: "Return date cannot be before the issue date." };
+
+  return {
+    value: {
+      keyCode,
+      keyType,
+      roomNumber: roomNumber || null,
+      guestName: guestName || null,
+      reservationCode: reservationCode || null,
+      status,
+      issuedAt,
+      returnedAt,
+      notes: notes || null,
+    },
+  };
+}
+
+app.get("/api/keys", wrap(async (req, res) => {
+  const [rows] = await pool.query(
+    `SELECT id, key_code AS keyCode, key_type AS keyType, room_number AS roomNumber,
+            guest_name AS guestName, reservation_code AS reservationCode, status,
+            issued_at AS issuedAt, returned_at AS returnedAt, notes
+     FROM room_keys ORDER BY updated_at DESC, id DESC`
+  );
+  res.json(rows);
+}));
+
+app.post("/api/keys", wrap(async (req, res) => {
+  const parsed = parseKeyRecord(req.body);
+  if (parsed.error) return res.status(400).json({ message: parsed.error });
+
+  const key = parsed.value;
+  try {
+    const [result] = await pool.query(
+      `INSERT INTO room_keys
+        (key_code, key_type, room_number, guest_name, reservation_code, status, issued_at, returned_at, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [key.keyCode, key.keyType, key.roomNumber, key.guestName, key.reservationCode,
+        key.status, key.issuedAt, key.returnedAt, key.notes]
+    );
+    res.status(201).json({ id: result.insertId, message: "Key record created." });
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY")
+      return res.status(409).json({ message: "A key with this ID already exists." });
+    throw err;
+  }
+}));
+
+app.put("/api/keys/:id", wrap(async (req, res) => {
+  const parsed = parseKeyRecord(req.body);
+  if (parsed.error) return res.status(400).json({ message: parsed.error });
+
+  const key = parsed.value;
+  try {
+    const [result] = await pool.query(
+      `UPDATE room_keys
+       SET key_code = ?, key_type = ?, room_number = ?, guest_name = ?, reservation_code = ?,
+           status = ?, issued_at = ?, returned_at = ?, notes = ?
+       WHERE id = ?`,
+      [key.keyCode, key.keyType, key.roomNumber, key.guestName, key.reservationCode,
+        key.status, key.issuedAt, key.returnedAt, key.notes, req.params.id]
+    );
+    if (!result.affectedRows) {
+      const [[existing]] = await pool.query("SELECT id FROM room_keys WHERE id = ?", [req.params.id]);
+      if (!existing) return res.status(404).json({ message: "Key record not found." });
+    }
+    res.json({ message: "Key record updated." });
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY")
+      return res.status(409).json({ message: "A key with this ID already exists." });
+    throw err;
+  }
+}));
+
+app.delete("/api/keys/:id", wrap(async (req, res) => {
+  const [result] = await pool.query("DELETE FROM room_keys WHERE id = ?", [req.params.id]);
+  if (!result.affectedRows) return res.status(404).json({ message: "Key record not found." });
+  res.json({ message: "Key record deleted." });
+}));
+
 app.get("/api/vouchers", wrap(async (req, res) => {
   const [rows] = await pool.query(
     `SELECT id, code, discount_type AS discountType, discount_value AS discountValue,
@@ -461,5 +573,22 @@ process.on("unhandledRejection", (e) => console.error("Unhandled rejection:", e)
 process.on("uncaughtException", (e) => console.error("Uncaught exception:", e));
 
 pool.query("SELECT 1")
+  .then(() => pool.query(`CREATE TABLE IF NOT EXISTS room_keys (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    key_code VARCHAR(60) NOT NULL,
+    key_type VARCHAR(40) NOT NULL,
+    room_number VARCHAR(20) NULL,
+    guest_name VARCHAR(120) NULL,
+    reservation_code VARCHAR(50) NULL,
+    status ENUM('Available', 'Assigned', 'Lost', 'Damaged') NOT NULL DEFAULT 'Available',
+    issued_at DATE NULL,
+    returned_at DATE NULL,
+    notes VARCHAR(500) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY room_keys_key_code_unique (key_code),
+    KEY room_keys_status_index (status)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`))
   .then(() => app.listen(8080, () => console.log("Server running on port 8080, DB connected")))
   .catch((e) => { console.error("Cannot connect to MySQL. Is it started in XAMPP?\n", e.message); process.exit(1); });
